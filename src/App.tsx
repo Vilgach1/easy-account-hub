@@ -13,6 +13,7 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import RoomsPage from "./pages/RoomsPage";
 import RoomPage from "./pages/RoomPage";
+import AdminPage from "./pages/AdminPage";
 
 // Set up site metadata
 document.title = "SyncWatch - Watch Together | vilgach.online";
@@ -47,6 +48,7 @@ const App = () => {
               <Route path="/profile" element={<Profile />} />
               <Route path="/rooms" element={<RoomsPage />} />
               <Route path="/room/:roomId" element={<RoomPage />} />
+              <Route path="/admin" element={<AdminPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

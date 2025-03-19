@@ -15,6 +15,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ type, onSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [showTwoFactor, setShowTwoFactor] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   
@@ -27,7 +29,17 @@ const AuthForm: React.FC<AuthFormProps> = ({ type, onSuccess }) => {
     
     try {
       if (type === 'login') {
-        await login(email, password);
+        // Check if this is the admin account
+        if (email === 'admin@vilgach.online') {
+          if (!showTwoFactor) {
+            setShowTwoFactor(true);
+            setIsSubmitting(false);
+            return;
+          }
+          await login(email, password, twoFactorCode);
+        } else {
+          await login(email, password);
+        }
       } else {
         await register(email, password, name);
       }
@@ -73,7 +85,10 @@ const AuthForm: React.FC<AuthFormProps> = ({ type, onSuccess }) => {
               type="email"
               placeholder="your.email@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setShowTwoFactor(false); // Reset 2FA field when email changes
+              }}
               required
               className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
             />
@@ -92,6 +107,23 @@ const AuthForm: React.FC<AuthFormProps> = ({ type, onSuccess }) => {
             />
           </div>
           
+          {type === 'login' && showTwoFactor && (
+            <div className="space-y-2 animate-fade-in">
+              <Label htmlFor="twoFactorCode">2FA Code</Label>
+              <Input
+                id="twoFactorCode"
+                placeholder="Enter 2FA code"
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value)}
+                required
+                className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+              />
+              <p className="text-xs text-muted-foreground">
+                Admin login requires 2FA authentication code
+              </p>
+            </div>
+          )}
+          
           {error && (
             <div className="text-sm text-destructive animate-fade-in mt-2">{error}</div>
           )}
@@ -104,7 +136,7 @@ const AuthForm: React.FC<AuthFormProps> = ({ type, onSuccess }) => {
             {isSubmitting 
               ? 'Processing...' 
               : type === 'login' 
-                ? 'Sign In' 
+                ? (showTwoFactor ? 'Verify & Sign In' : 'Sign In')
                 : 'Create Account'}
           </Button>
         </form>

@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/tabs";
 import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const videoSources = [
   { id: "sample1", name: "Sample Video 1", src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },

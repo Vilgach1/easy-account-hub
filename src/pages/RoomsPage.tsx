@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { 
   Card, 
   CardContent, 
@@ -28,7 +29,10 @@ import {
   Plus, 
   User, 
   Clock, 
-  ArrowRight 
+  ArrowRight,
+  Lock,
+  Unlock,
+  Key
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -39,13 +43,18 @@ type Room = {
   users: any[];
   createdBy: string;
   createdAt: Date;
+  isPrivate: boolean;
+  inviteCode?: string;
 };
 
 const RoomsPage = () => {
   const { user, isAuthenticated } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [newRoomName, setNewRoomName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
   const navigate = useNavigate();
   
   // Load rooms from localStorage (simulating a database)
@@ -59,8 +68,13 @@ const RoomsPage = () => {
       }
     }).filter(Boolean);
     
-    setRooms(loadedRooms);
-  }, []);
+    // Only show public rooms or rooms created by the user
+    const filteredRooms = loadedRooms.filter(room => 
+      !room.isPrivate || (user && room.createdBy === user.id)
+    );
+    
+    setRooms(filteredRooms);
+  }, [user]);
   
   const createRoom = () => {
     if (!newRoomName.trim()) {
@@ -74,22 +88,68 @@ const RoomsPage = () => {
     }
     
     const roomId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Generate invite code if it's a private room
+    const generatedInviteCode = isPrivate 
+      ? Math.random().toString(36).substring(2, 10).toUpperCase()
+      : undefined;
+    
     const newRoom: Room = {
       id: roomId,
       name: newRoomName,
       videoId: 'sample1',
       users: user ? [user] : [],
       createdBy: user?.id || 'anonymous',
-      createdAt: new Date()
+      createdAt: new Date(),
+      isPrivate,
+      inviteCode: generatedInviteCode
     };
     
     localStorage.setItem(`room-${roomId}`, JSON.stringify(newRoom));
     setRooms([...rooms, newRoom]);
     setNewRoomName('');
+    setIsPrivate(false);
     setIsDialogOpen(false);
     
-    toast.success('Room created successfully');
+    // Show the invite code to the user if it's a private room
+    if (isPrivate && generatedInviteCode) {
+      toast.success(`Room created successfully. Invite code: ${generatedInviteCode}`);
+    } else {
+      toast.success('Room created successfully');
+    }
+    
     navigate(`/room/${roomId}`);
+  };
+  
+  const joinRoomByCode = () => {
+    if (!inviteCode.trim()) {
+      toast.error('Please enter an invite code');
+      return;
+    }
+    
+    // Find the room with the matching invite code
+    const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
+    let foundRoom: Room | null = null;
+    
+    for (const key of roomKeys) {
+      try {
+        const room = JSON.parse(localStorage.getItem(key) || '');
+        if (room.inviteCode && room.inviteCode.toLowerCase() === inviteCode.toLowerCase()) {
+          foundRoom = room;
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    
+    if (foundRoom) {
+      setIsJoinDialogOpen(false);
+      setInviteCode('');
+      navigate(`/room/${foundRoom.id}`);
+    } else {
+      toast.error('Invalid invite code. Please try again.');
+    }
   };
   
   const formatDate = (date: Date) => {
@@ -113,41 +173,99 @@ const RoomsPage = () => {
             </p>
           </div>
           
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="dark:bg-purple-600 dark:hover:bg-purple-700">
-                <Plus className="h-4 w-4 mr-2" /> Create Room
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
-              <DialogHeader>
-                <DialogTitle className="dark:text-white">Create a New Room</DialogTitle>
-                <DialogDescription className="dark:text-gray-400">
-                  Create a room and invite friends to watch together
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="dark:text-white">Room Name</Label>
-                  <Input
-                    id="name"
-                    placeholder="Enter room name"
-                    value={newRoomName}
-                    onChange={(e) => setNewRoomName(e.target.value)}
-                    className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button 
-                  onClick={createRoom}
-                  className="dark:bg-purple-600 dark:hover:bg-purple-700"
-                >
-                  Create Room
+          <div className="flex space-x-3">
+            <Dialog open={isJoinDialogOpen} onOpenChange={setIsJoinDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="dark:border-purple-500 dark:text-purple-400">
+                  <Key className="h-4 w-4 mr-2" /> Join with Code
                 </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
+                <DialogHeader>
+                  <DialogTitle className="dark:text-white">Join Private Room</DialogTitle>
+                  <DialogDescription className="dark:text-gray-400">
+                    Enter the invite code to join a private room
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="inviteCode" className="dark:text-white">Invite Code</Label>
+                    <Input
+                      id="inviteCode"
+                      placeholder="Enter invite code"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                      className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button 
+                    onClick={joinRoomByCode}
+                    className="dark:bg-purple-600 dark:hover:bg-purple-700"
+                  >
+                    Join Room
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="dark:bg-purple-600 dark:hover:bg-purple-700">
+                  <Plus className="h-4 w-4 mr-2" /> Create Room
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="dark:bg-gray-800 dark:border-gray-700">
+                <DialogHeader>
+                  <DialogTitle className="dark:text-white">Create a New Room</DialogTitle>
+                  <DialogDescription className="dark:text-gray-400">
+                    Create a room and invite friends to watch together
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="dark:text-white">Room Name</Label>
+                    <Input
+                      id="name"
+                      placeholder="Enter room name"
+                      value={newRoomName}
+                      onChange={(e) => setNewRoomName(e.target.value)}
+                      className="dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="private-mode"
+                      checked={isPrivate}
+                      onCheckedChange={setIsPrivate}
+                    />
+                    <Label htmlFor="private-mode" className="dark:text-white">
+                      {isPrivate ? <Lock className="h-4 w-4 inline mr-2" /> : <Unlock className="h-4 w-4 inline mr-2" />}
+                      {isPrivate ? 'Private Room' : 'Public Room'}
+                    </Label>
+                  </div>
+                  
+                  {isPrivate && (
+                    <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-md">
+                      <p className="text-sm dark:text-gray-300">
+                        Private rooms are only visible to you and people you invite using a special code.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button 
+                    onClick={createRoom}
+                    className="dark:bg-purple-600 dark:hover:bg-purple-700"
+                  >
+                    Create Room
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
         
         {rooms.length > 0 ? (
@@ -158,7 +276,12 @@ const RoomsPage = () => {
                   <CardTitle className="dark:text-white">
                     <div className="flex justify-between items-center">
                       <span className="truncate">{room.name}</span>
-                      <Film className="h-5 w-5 text-muted-foreground dark:text-gray-400 shrink-0 ml-2" />
+                      <div className="flex items-center">
+                        {room.isPrivate && (
+                          <Lock className="h-4 w-4 text-purple-500 mr-2" />
+                        )}
+                        <Film className="h-5 w-5 text-muted-foreground dark:text-gray-400 shrink-0" />
+                      </div>
                     </div>
                   </CardTitle>
                   <CardDescription className="dark:text-gray-400">

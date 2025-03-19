@@ -14,6 +14,13 @@ import NotFound from "./pages/NotFound";
 import RoomsPage from "./pages/RoomsPage";
 import RoomPage from "./pages/RoomPage";
 
+// Set up site metadata
+document.title = "SyncWatch - Watch Together | vilgach.online";
+const metaDescription = document.querySelector('meta[name="description"]');
+if (metaDescription) {
+  metaDescription.setAttribute('content', 'Watch videos together with friends in perfect synchronization on vilgach.online');
+}
+
 const queryClient = new QueryClient();
 
 const App = () => {

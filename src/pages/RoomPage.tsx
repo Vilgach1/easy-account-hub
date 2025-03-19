@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -15,7 +16,8 @@ import {
   LinkIcon, 
   Key,
   Lock,
-  Unlock
+  Unlock,
+  Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -316,7 +318,7 @@ const RoomPage = () => {
                   <div className="flex items-center">
                     <CardTitle className="dark:text-white">{room.name}</CardTitle>
                     {room.isPrivate && (
-                      <Lock className="h-4 w-4 text-purple-500 ml-2" title="Private Room" />
+                      <Lock className="h-4 w-4 text-purple-500 ml-2" aria-label="Private Room" />
                     )}
                   </div>
                   <div className="flex space-x-2">

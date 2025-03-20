@@ -59,21 +59,28 @@ const RoomsPage = () => {
   
   // Load rooms from localStorage (simulating a database)
   useEffect(() => {
-    const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
-    const loadedRooms = roomKeys.map(key => {
-      try {
-        return JSON.parse(localStorage.getItem(key) || '');
-      } catch (e) {
-        return null;
-      }
-    }).filter(Boolean);
-    
-    // Only show public rooms or rooms created by the user
-    const filteredRooms = loadedRooms.filter(room => 
-      !room.isPrivate || (user && room.createdBy === user.id)
-    );
-    
-    setRooms(filteredRooms);
+    try {
+      const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
+      const loadedRooms = roomKeys.map(key => {
+        try {
+          const roomData = localStorage.getItem(key);
+          return roomData ? JSON.parse(roomData) : null;
+        } catch (e) {
+          console.error("Error parsing room data:", e);
+          return null;
+        }
+      }).filter(Boolean);
+      
+      // Only show public rooms or rooms created by the user
+      const filteredRooms = loadedRooms.filter(room => 
+        !room.isPrivate || (user && room.createdBy === user.id)
+      );
+      
+      setRooms(filteredRooms);
+    } catch (error) {
+      console.error("Error loading rooms:", error);
+      setRooms([]);
+    }
   }, [user]);
   
   const createRoom = () => {
@@ -133,12 +140,16 @@ const RoomsPage = () => {
     
     for (const key of roomKeys) {
       try {
-        const room = JSON.parse(localStorage.getItem(key) || '');
-        if (room.inviteCode && room.inviteCode.toLowerCase() === inviteCode.toLowerCase()) {
-          foundRoom = room;
-          break;
+        const roomData = localStorage.getItem(key);
+        if (roomData) {
+          const room = JSON.parse(roomData);
+          if (room.inviteCode && room.inviteCode.toLowerCase() === inviteCode.toLowerCase()) {
+            foundRoom = room;
+            break;
+          }
         }
       } catch (e) {
+        console.error("Error parsing room data:", e);
         continue;
       }
     }
@@ -153,11 +164,17 @@ const RoomsPage = () => {
   };
   
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    if (!date) return 'Unknown date';
+    try {
+      return new Date(date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return 'Invalid date';
+    }
   };
   
   return (
@@ -285,7 +302,7 @@ const RoomsPage = () => {
                     </div>
                   </CardTitle>
                   <CardDescription className="dark:text-gray-400">
-                    Room ID: {room.id.substring(0, 8)}...
+                    Room ID: {room.id && room.id.substring(0, 8)}...
                   </CardDescription>
                 </CardHeader>
                 

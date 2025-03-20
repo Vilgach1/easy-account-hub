@@ -133,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
-  const login = async (email: string, password: string, twoFactorCode?: string) => {
+  const login = async (email: string, password: string, twoFactorCode?: string): Promise<void> => {
     setIsLoading(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -143,7 +143,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (SERVICE_ADMIN.twoFactorEnabled) {
           if (!twoFactorCode) {
             setIsLoading(false);
-            return toast.error('2FA code required for admin login');
+            toast.error('2FA code required for admin login');
+            return;
           }
           
           if (twoFactorCode !== SERVICE_ADMIN.twoFactorCode) {
@@ -156,7 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: 'service-admin',
           email: SERVICE_ADMIN.email,
           name: 'Service Admin',
-          role: 'admin',
+          role: 'admin' as UserRole,
           createdAt: new Date(),
           lastLogin: new Date(),
           ...collectUserData()
@@ -229,7 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, password: string, name?: string) => {
+  const register = async (email: string, password: string, name?: string): Promise<void> => {
     setIsLoading(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -247,7 +248,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email,
         password, // In a real app, this would be hashed
         name,
-        role: 'user', // Default role
+        role: 'user' as UserRole, // Cast to ensure it matches the UserRole type
         createdAt: new Date(),
         lastLogin: new Date(),
         ...userData

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -35,6 +34,7 @@ import {
   Key
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MockDatabase } from '@/services/database';
 
 type Room = {
   id: string;
@@ -55,35 +55,37 @@ const RoomsPage = () => {
   const [inviteCode, setInviteCode] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   
-  // Load rooms from localStorage (simulating a database)
+  const db = MockDatabase.getInstance();
+  
   useEffect(() => {
-    try {
-      const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
-      const loadedRooms = roomKeys.map(key => {
-        try {
-          const roomData = localStorage.getItem(key);
-          return roomData ? JSON.parse(roomData) : null;
-        } catch (e) {
-          console.error("Error parsing room data:", e);
-          return null;
-        }
-      }).filter(Boolean);
+    const loadRooms = async () => {
+      setIsLoading(true);
+      setError(null);
       
-      // Only show public rooms or rooms created by the user
-      const filteredRooms = loadedRooms.filter(room => 
-        !room.isPrivate || (user && room.createdBy === user.id)
-      );
-      
-      setRooms(filteredRooms);
-    } catch (error) {
-      console.error("Error loading rooms:", error);
-      setRooms([]);
-    }
+      try {
+        const allRooms = await db.getRooms();
+        
+        const filteredRooms = allRooms.filter((room: Room) => 
+          !room.isPrivate || (user && room.createdBy === user.id)
+        );
+        
+        setRooms(filteredRooms);
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Error loading rooms:", err);
+        setError("Failed to load rooms. Please try again later.");
+        setIsLoading(false);
+      }
+    };
+    
+    loadRooms();
   }, [user]);
   
-  const createRoom = () => {
+  const createRoom = async () => {
     if (!newRoomName.trim()) {
       toast.error('Please enter a room name');
       return;
@@ -96,7 +98,6 @@ const RoomsPage = () => {
     
     const roomId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     
-    // Generate invite code if it's a private room
     const generatedInviteCode = isPrivate 
       ? Math.random().toString(36).substring(2, 10).toUpperCase()
       : undefined;
@@ -112,54 +113,54 @@ const RoomsPage = () => {
       inviteCode: generatedInviteCode
     };
     
-    localStorage.setItem(`room-${roomId}`, JSON.stringify(newRoom));
-    setRooms([...rooms, newRoom]);
-    setNewRoomName('');
-    setIsPrivate(false);
-    setIsDialogOpen(false);
-    
-    // Show the invite code to the user if it's a private room
-    if (isPrivate && generatedInviteCode) {
-      toast.success(`Room created successfully. Invite code: ${generatedInviteCode}`);
-    } else {
-      toast.success('Room created successfully');
+    try {
+      await db.createRoom(newRoom);
+      
+      setRooms([...rooms, newRoom]);
+      setNewRoomName('');
+      setIsPrivate(false);
+      setIsDialogOpen(false);
+      
+      if (isPrivate && generatedInviteCode) {
+        toast.success(`Room created successfully. Invite code: ${generatedInviteCode}`);
+      } else {
+        toast.success('Room created successfully');
+      }
+      
+      navigate(`/room/${roomId}`);
+    } catch (error) {
+      console.error("Error creating room:", error);
+      toast.error("Failed to create room. Please try again.");
     }
-    
-    navigate(`/room/${roomId}`);
   };
   
-  const joinRoomByCode = () => {
+  const joinRoomByCode = async () => {
     if (!inviteCode.trim()) {
       toast.error('Please enter an invite code');
       return;
     }
     
-    // Find the room with the matching invite code
-    const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
-    let foundRoom: Room | null = null;
+    setIsLoading(true);
     
-    for (const key of roomKeys) {
-      try {
-        const roomData = localStorage.getItem(key);
-        if (roomData) {
-          const room = JSON.parse(roomData);
-          if (room.inviteCode && room.inviteCode.toLowerCase() === inviteCode.toLowerCase()) {
-            foundRoom = room;
-            break;
-          }
-        }
-      } catch (e) {
-        console.error("Error parsing room data:", e);
-        continue;
+    try {
+      const allRooms = await db.getRooms();
+      const foundRoom = allRooms.find((room: Room) => 
+        room.inviteCode && room.inviteCode.toLowerCase() === inviteCode.toLowerCase()
+      );
+      
+      setIsLoading(false);
+      
+      if (foundRoom) {
+        setIsJoinDialogOpen(false);
+        setInviteCode('');
+        navigate(`/room/${foundRoom.id}`);
+      } else {
+        toast.error('Invalid invite code. Please try again.');
       }
-    }
-    
-    if (foundRoom) {
-      setIsJoinDialogOpen(false);
-      setInviteCode('');
-      navigate(`/room/${foundRoom.id}`);
-    } else {
-      toast.error('Invalid invite code. Please try again.');
+    } catch (error) {
+      console.error("Error joining room:", error);
+      toast.error("Failed to join room. Please try again.");
+      setIsLoading(false);
     }
   };
   
@@ -176,6 +177,40 @@ const RoomsPage = () => {
       return 'Invalid date';
     }
   };
+  
+  if (isLoading && rooms.length === 0) {
+    return (
+      <div className="min-h-screen flex flex-col dark:bg-gray-900 transition-colors duration-300">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-12 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+            <p className="dark:text-gray-300">Loading rooms...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col dark:bg-gray-900 transition-colors duration-300">
+        <Navbar />
+        <main className="flex-1 container mx-auto px-4 py-12 flex items-center justify-center">
+          <div className="text-center p-6 bg-red-50 dark:bg-red-900/20 rounded-lg max-w-md">
+            <div className="text-red-600 dark:text-red-400 text-xl mb-4">Error</div>
+            <p className="dark:text-gray-300 mb-4">{error}</p>
+            <Button 
+              onClick={() => window.location.reload()}
+              className="dark:bg-purple-600 dark:hover:bg-purple-700"
+            >
+              Try Again
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen flex flex-col dark:bg-gray-900 transition-colors duration-300">
@@ -220,8 +255,9 @@ const RoomsPage = () => {
                   <Button 
                     onClick={joinRoomByCode}
                     className="dark:bg-purple-600 dark:hover:bg-purple-700"
+                    disabled={isLoading}
                   >
-                    Join Room
+                    {isLoading ? 'Joining...' : 'Join Room'}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -276,8 +312,9 @@ const RoomsPage = () => {
                   <Button 
                     onClick={createRoom}
                     className="dark:bg-purple-600 dark:hover:bg-purple-700"
+                    disabled={isLoading}
                   >
-                    Create Room
+                    {isLoading ? 'Creating...' : 'Create Room'}
                   </Button>
                 </DialogFooter>
               </DialogContent>

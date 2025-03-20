@@ -54,6 +54,9 @@ export const useAuth = () => {
   return context;
 };
 
+// Mock API endpoints
+const API_URL = 'https://api.vilgach.online';
+
 // Add service admin account credentials
 const SERVICE_ADMIN = {
   email: 'admin@vilgach.online',
@@ -62,43 +65,189 @@ const SERVICE_ADMIN = {
   twoFactorCode: '9147'
 };
 
+// Mock database - this would be replaced with actual API calls in production
+class MockDatabase {
+  private users: any[] = [];
+  private rooms: Record<string, any> = {};
+  private static instance: MockDatabase;
+
+  private constructor() {
+    // Load initial data from localStorage for development/demo purposes
+    try {
+      const savedUsers = localStorage.getItem('users');
+      if (savedUsers) {
+        this.users = JSON.parse(savedUsers);
+      }
+      
+      const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
+      roomKeys.forEach(key => {
+        const roomData = localStorage.getItem(key);
+        if (roomData) {
+          this.rooms[key.replace('room-', '')] = JSON.parse(roomData);
+        }
+      });
+    } catch (error) {
+      console.error('Error loading mock database:', error);
+    }
+  }
+
+  public static getInstance(): MockDatabase {
+    if (!MockDatabase.instance) {
+      MockDatabase.instance = new MockDatabase();
+    }
+    return MockDatabase.instance;
+  }
+
+  // User methods
+  public async getUsers(): Promise<any[]> {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return [...this.users];
+  }
+
+  public async saveUsers(users: any[]): Promise<void> {
+    // Simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    this.users = [...users];
+    
+    // Save to localStorage for demo purposes
+    localStorage.setItem('users', JSON.stringify(this.users));
+  }
+
+  public async getUserById(userId: string): Promise<any | null> {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return this.users.find(u => u.id === userId) || null;
+  }
+
+  public async getUserByEmail(email: string): Promise<any | null> {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return this.users.find(u => u.email === email) || null;
+  }
+
+  public async createUser(userData: any): Promise<any> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const newUser = { ...userData, id: crypto.randomUUID() };
+    this.users.push(newUser);
+    localStorage.setItem('users', JSON.stringify(this.users));
+    return newUser;
+  }
+
+  public async updateUser(userId: string, userData: any): Promise<any | null> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const index = this.users.findIndex(u => u.id === userId);
+    if (index === -1) return null;
+    
+    this.users[index] = { ...this.users[index], ...userData };
+    localStorage.setItem('users', JSON.stringify(this.users));
+    return this.users[index];
+  }
+
+  // Room methods
+  public async getRooms(): Promise<any[]> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return Object.values(this.rooms);
+  }
+
+  public async getRoomById(roomId: string): Promise<any | null> {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    return this.rooms[roomId] || null;
+  }
+
+  public async createRoom(roomData: any): Promise<any> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const roomId = roomData.id || `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const newRoom = { ...roomData, id: roomId };
+    this.rooms[roomId] = newRoom;
+    localStorage.setItem(`room-${roomId}`, JSON.stringify(newRoom));
+    return newRoom;
+  }
+
+  public async updateRoom(roomId: string, roomData: any): Promise<any | null> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    if (!this.rooms[roomId]) return null;
+    
+    this.rooms[roomId] = { ...this.rooms[roomId], ...roomData };
+    localStorage.setItem(`room-${roomId}`, JSON.stringify(this.rooms[roomId]));
+    return this.rooms[roomId];
+  }
+
+  public async deleteRoom(roomId: string): Promise<boolean> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    if (!this.rooms[roomId]) return false;
+    
+    delete this.rooms[roomId];
+    localStorage.removeItem(`room-${roomId}`);
+    return true;
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
+  const db = MockDatabase.getInstance();
 
   // Track user IP and data
   const collectUserData = () => {
     const userAgent = navigator.userAgent;
+    
+    // In a real app, we would get the IP from the server
+    // For this demo, we'll simulate an IP address
+    const simulatedIpAddress = `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+    
     return {
       userAgent,
+      ipAddress: simulatedIpAddress,
       timestamp: new Date(),
     };
   };
 
   // Check for saved user on initial load
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        console.error('Failed to parse saved user', error);
-        localStorage.removeItem('user');
+    const loadUser = async () => {
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        try {
+          const parsedUser = JSON.parse(savedUser);
+          
+          // Verify the user still exists in the database
+          const dbUser = await db.getUserById(parsedUser.id);
+          if (dbUser) {
+            // Check if user is banned
+            if (dbUser.isBanned) {
+              if (dbUser.banExpiration && new Date(dbUser.banExpiration) < new Date()) {
+                // Ban expired, remove ban
+                await db.updateUser(dbUser.id, {
+                  isBanned: undefined,
+                  banExpiration: undefined,
+                  bannedBy: undefined,
+                  banReason: undefined
+                });
+                setUser({ ...parsedUser, isBanned: false });
+              } else {
+                // User is still banned, log them out
+                localStorage.removeItem('user');
+                setUser(null);
+                toast.error(`Your account is banned. Reason: ${dbUser.banReason || 'Violation of terms'}`);
+              }
+            } else {
+              setUser(parsedUser);
+            }
+          } else {
+            // User no longer exists in database
+            localStorage.removeItem('user');
+            setUser(null);
+          }
+        } catch (error) {
+          console.error('Failed to parse saved user', error);
+          localStorage.removeItem('user');
+        }
       }
-    }
-    setIsLoading(false);
+      setIsLoading(false);
+    };
+    
+    loadUser();
   }, []);
-
-  // Mock database of users
-  const usersDb = () => {
-    const users = localStorage.getItem('users');
-    return users ? JSON.parse(users) : [];
-  };
-
-  const saveUsersDb = (users: any[]) => {
-    localStorage.setItem('users', JSON.stringify(users));
-  };
 
   const isAdmin = () => {
     return user?.role === 'admin';
@@ -113,31 +262,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Unauthorized access');
     }
     
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    const users = usersDb();
-    const roomKeys = Object.keys(localStorage).filter(key => key.startsWith('room-'));
-    const rooms = roomKeys.map(key => {
-      try {
-        return JSON.parse(localStorage.getItem(key) || '');
-      } catch (e) {
-        return null;
-      }
-    }).filter(Boolean);
-    
-    return {
-      totalUsers: users.length,
-      totalRooms: rooms.length,
-      users,
-      rooms
-    };
+    setIsLoading(true);
+    try {
+      const users = await db.getUsers();
+      const rooms = await db.getRooms();
+      
+      setIsLoading(false);
+      return {
+        totalUsers: users.length,
+        totalRooms: rooms.length,
+        users,
+        rooms
+      };
+    } catch (error) {
+      setIsLoading(false);
+      throw error;
+    }
   };
 
   const login = async (email: string, password: string, twoFactorCode?: string): Promise<void> => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       // Check for service admin login
       if (email === SERVICE_ADMIN.email && password === SERVICE_ADMIN.password) {
         if (SERVICE_ADMIN.twoFactorEnabled) {
@@ -157,7 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: 'service-admin',
           email: SERVICE_ADMIN.email,
           name: 'Service Admin',
-          role: 'admin' as UserRole,
+          role: 'admin',
           createdAt: new Date(),
           lastLogin: new Date(),
           ...collectUserData()
@@ -172,12 +317,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       
-      const users = usersDb();
-      const foundUser = users.find((u: any) => 
-        u.email === email && u.password === password
-      );
+      // Regular user login
+      const foundUser = await db.getUserByEmail(email);
       
-      if (!foundUser) {
+      if (!foundUser || foundUser.password !== password) {
         throw new Error('Invalid email or password');
       }
       
@@ -185,14 +328,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (foundUser.isBanned) {
         if (foundUser.banExpiration && new Date(foundUser.banExpiration) < new Date()) {
           // Ban expired, remove ban
-          const updatedUsers = users.map((u: any) => {
-            if (u.id === foundUser.id) {
-              const { isBanned, banExpiration, bannedBy, banReason, ...userWithoutBan } = u;
-              return { ...userWithoutBan };
-            }
-            return u;
+          await db.updateUser(foundUser.id, {
+            isBanned: undefined,
+            banExpiration: undefined,
+            bannedBy: undefined,
+            banReason: undefined
           });
-          saveUsersDb(updatedUsers);
         } else {
           const expiry = foundUser.banExpiration 
             ? ` until ${new Date(foundUser.banExpiration).toLocaleDateString()}`
@@ -203,21 +344,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       // Add login data
       const userData = collectUserData();
-      const updatedUser = {
-        ...foundUser,
+      const updatedUser = await db.updateUser(foundUser.id, {
         lastLogin: new Date(),
         ...userData
-      };
-      
-      // Update in DB
-      const updatedUsers = users.map((u: any) => {
-        return u.id === foundUser.id ? updatedUser : u;
       });
-      saveUsersDb(updatedUsers);
       
       // Remove password before storing in state
       const { password: _, ...userWithoutPassword } = updatedUser;
-      setUser(userWithoutPassword);
+      setUser(userWithoutPassword as User);
       localStorage.setItem('user', JSON.stringify(userWithoutPassword));
       
       toast.success('Login successful');
@@ -233,33 +367,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const register = async (email: string, password: string, name?: string): Promise<void> => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const users = usersDb();
-      
-      if (users.some((u: any) => u.email === email)) {
+      // Check if user already exists
+      const existingUser = await db.getUserByEmail(email);
+      if (existingUser) {
         throw new Error('Email already exists');
       }
       
       const userData = collectUserData();
       
-      const newUser = {
-        id: crypto.randomUUID(),
+      // Create new user
+      const newUser = await db.createUser({
         email,
         password, // In a real app, this would be hashed
         name,
-        role: 'user' as UserRole, // Cast to ensure it matches the UserRole type
+        role: 'user' as UserRole,
         createdAt: new Date(),
         lastLogin: new Date(),
         ...userData
-      };
-      
-      // Save to "database"
-      saveUsersDb([...users, newUser]);
+      });
       
       // Login the user after registration
       const { password: _, ...userWithoutPassword } = newUser;
-      setUser(userWithoutPassword);
+      setUser(userWithoutPassword as User);
       localStorage.setItem('user', JSON.stringify(userWithoutPassword));
       
       toast.success('Registration successful');
@@ -284,25 +413,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const updatedUser = await db.updateUser(user.id, data);
       
-      const users = usersDb();
-      const updatedUsers = users.map((u: any) => {
-        if (u.id === user.id) {
-          return { ...u, ...data };
-        }
-        return u;
-      });
-      
-      saveUsersDb(updatedUsers);
-      
-      const updatedUser = { ...user, ...data };
-      setUser(updatedUser);
-      localStorage.setItem('user', JSON.stringify(updatedUser));
-      
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      toast.error('Failed to update profile');
+      if (updatedUser) {
+        setUser({ ...user, ...data });
+        localStorage.setItem('user', JSON.stringify({ ...user, ...data }));
+        toast.success('Profile updated successfully');
+      } else {
+        throw new Error('User not found');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update profile');
       throw error;
     } finally {
       setIsLoading(false);
@@ -314,9 +435,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Unauthorized action');
     }
 
+    setIsLoading(true);
     try {
-      const users = usersDb();
-      const targetUser = users.find((u: any) => u.id === userId);
+      const targetUser = await db.getUserById(userId);
       
       if (!targetUser) {
         throw new Error('User not found');
@@ -332,24 +453,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Only admins can ban moderators');
       }
 
-      const updatedUsers = users.map((u: any) => {
-        if (u.id === userId) {
-          return { 
-            ...u, 
-            isBanned: true, 
-            banReason: reason,
-            bannedBy: user?.id,
-            banExpiration: temporary && expirationDate ? expirationDate : undefined
-          };
-        }
-        return u;
+      await db.updateUser(userId, { 
+        isBanned: true, 
+        banReason: reason,
+        bannedBy: user?.id,
+        banExpiration: temporary && expirationDate ? expirationDate : undefined
       });
       
-      saveUsersDb(updatedUsers);
       toast.success(`User ${temporary ? 'temporarily ' : ''}banned successfully`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to ban user');
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -358,9 +474,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Unauthorized action');
     }
 
+    setIsLoading(true);
     try {
-      const users = usersDb();
-      const targetUser = users.find((u: any) => u.id === userId);
+      const targetUser = await db.getUserById(userId);
       
       if (!targetUser) {
         throw new Error('User not found');
@@ -371,19 +487,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('You can only unban users you have banned');
       }
 
-      const updatedUsers = users.map((u: any) => {
-        if (u.id === userId) {
-          const { isBanned, banReason, bannedBy, banExpiration, ...userWithoutBan } = u;
-          return userWithoutBan;
-        }
-        return u;
+      await db.updateUser(userId, {
+        isBanned: undefined,
+        banReason: undefined,
+        bannedBy: undefined,
+        banExpiration: undefined
       });
       
-      saveUsersDb(updatedUsers);
       toast.success('User unbanned successfully');
     } catch (error: any) {
       toast.error(error.message || 'Failed to unban user');
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -392,9 +508,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Only admins can change user roles');
     }
 
+    setIsLoading(true);
     try {
-      const users = usersDb();
-      const targetUser = users.find((u: any) => u.id === userId);
+      const targetUser = await db.getUserById(userId);
       
       if (!targetUser) {
         throw new Error('User not found');
@@ -405,18 +521,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Cannot change the role of another admin');
       }
 
-      const updatedUsers = users.map((u: any) => {
-        if (u.id === userId) {
-          return { ...u, role };
-        }
-        return u;
-      });
-      
-      saveUsersDb(updatedUsers);
+      await db.updateUser(userId, { role });
       toast.success(`User role updated to ${role}`);
     } catch (error: any) {
       toast.error(error.message || 'Failed to update user role');
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -425,12 +536,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Only admins can delete rooms');
     }
 
+    setIsLoading(true);
     try {
-      localStorage.removeItem(`room-${roomId}`);
-      toast.success('Room deleted successfully');
+      const success = await db.deleteRoom(roomId);
+      if (success) {
+        toast.success('Room deleted successfully');
+      } else {
+        throw new Error('Room not found');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete room');
       throw error;
+    } finally {
+      setIsLoading(false);
     }
   };
 

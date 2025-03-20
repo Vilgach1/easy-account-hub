@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -25,6 +24,7 @@ import {
   Lock
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MockDatabase } from '@/services/database';
 
 type RoomUser = {
   id: string;
@@ -54,6 +54,7 @@ const RoomPage = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const db = MockDatabase.getInstance();
   
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,76 +69,73 @@ const RoomPage = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   
-  // Load room data
   useEffect(() => {
-    if (!roomId) {
-      setError('Room ID is missing');
-      setLoading(false);
-      return;
-    }
-    
-    try {
-      const roomData = localStorage.getItem(`room-${roomId}`);
-      if (!roomData) {
-        setError('Room not found');
+    const loadRoom = async () => {
+      if (!roomId) {
+        setError('Room ID is missing');
         setLoading(false);
         return;
       }
       
-      const parsedRoom = JSON.parse(roomData);
-      
-      // Check if user is allowed to access this room if it's private
-      if (parsedRoom.isPrivate && (!user || (user.id !== parsedRoom.createdBy))) {
-        // For demo, we'll allow any authenticated user to join
-        if (!isAuthenticated) {
-          setError('This is a private room. Please log in to join.');
+      try {
+        const roomData = await db.getRoomById(roomId);
+        if (!roomData) {
+          setError('Room not found');
           setLoading(false);
           return;
         }
-      }
-      
-      // Add user to the room's users array if they're not already in it
-      if (user && !parsedRoom.users.some((u: RoomUser) => u.id === user.id)) {
-        const updatedUsers = [...parsedRoom.users, { 
-          id: user.id, 
-          name: user.name || user.email.split('@')[0],
-          role: user.id === parsedRoom.createdBy ? 'host' : 'viewer'
-        }];
         
-        parsedRoom.users = updatedUsers;
-        localStorage.setItem(`room-${roomId}`, JSON.stringify(parsedRoom));
-      }
-      
-      setRoom(parsedRoom);
-      
-      // Load sample chat messages
-      const sampleMessages: ChatMessage[] = [
-        {
-          id: '1',
-          userId: 'system',
-          userName: 'System',
-          text: `Welcome to ${parsedRoom.name}!`,
-          timestamp: new Date(Date.now() - 1000 * 60 * 5)
+        if (roomData.isPrivate && (!user || (user.id !== roomData.createdBy))) {
+          if (!isAuthenticated) {
+            setError('This is a private room. Please log in to join.');
+            setLoading(false);
+            return;
+          }
         }
-      ];
-      
-      if (user) {
-        sampleMessages.push({
-          id: '2',
-          userId: 'system',
-          userName: 'System',
-          text: `${user.name || user.email.split('@')[0]} has joined the room`,
-          timestamp: new Date()
-        });
+        
+        if (user && !roomData.users.some((u: RoomUser) => u.id === user.id)) {
+          const userToAdd = { 
+            id: user.id, 
+            name: user.name || user.email.split('@')[0],
+            role: user.id === roomData.createdBy ? 'host' : 'viewer'
+          };
+          
+          await db.addUserToRoom(roomId, userToAdd);
+          roomData.users.push(userToAdd);
+        }
+        
+        setRoom(roomData);
+        
+        const sampleMessages: ChatMessage[] = [
+          {
+            id: '1',
+            userId: 'system',
+            userName: 'System',
+            text: `Welcome to ${roomData.name}!`,
+            timestamp: new Date(Date.now() - 1000 * 60 * 5)
+          }
+        ];
+        
+        if (user) {
+          sampleMessages.push({
+            id: '2',
+            userId: 'system',
+            userName: 'System',
+            text: `${user.name || user.email.split('@')[0]} has joined the room`,
+            timestamp: new Date()
+          });
+        }
+        
+        setChatMessages(sampleMessages);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading room:', error);
+        setError('Error loading room data');
+        setLoading(false);
       }
-      
-      setChatMessages(sampleMessages);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading room:', error);
-      setError('Error loading room data');
-      setLoading(false);
-    }
+    };
+    
+    loadRoom();
   }, [roomId, user, isAuthenticated]);
   
   const handlePlayPause = () => {
@@ -196,7 +194,6 @@ const RoomPage = () => {
   const shareRoom = () => {
     if (!room) return;
     
-    // Copy link to clipboard
     const url = window.location.href;
     navigator.clipboard.writeText(url)
       .then(() => {
@@ -288,15 +285,16 @@ const RoomPage = () => {
             <Card className="mb-4 overflow-hidden dark:bg-gray-800 dark:border-gray-700">
               <CardContent className="p-0">
                 <div className="aspect-video bg-black relative">
-                  {/* The MediaPlayer component goes here */}
-                  <MediaPlayer
-                    videoId={room.videoId}
-                    isPlaying={isPlaying}
-                    volume={isMuted ? 0 : volume}
-                    currentTime={currentTime}
-                    onTimeUpdate={handleTimeUpdate}
-                    onDurationChange={handleDurationChange}
-                  />
+                  {room && (
+                    <MediaPlayer
+                      videoId={room.videoId}
+                      isPlaying={isPlaying}
+                      volume={isMuted ? 0 : volume}
+                      currentTime={currentTime}
+                      onTimeUpdate={handleTimeUpdate}
+                      onDurationChange={handleDurationChange}
+                    />
+                  )}
                 </div>
               </CardContent>
               

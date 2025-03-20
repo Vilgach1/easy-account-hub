@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -63,13 +64,14 @@ const RoomPage = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(80);
+  const [volume, setVolume] = useState(0.8); // Changed to 0.8 (scale 0-1) from 80
   const [isMuted, setIsMuted] = useState(false);
   
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   
   useEffect(() => {
+    console.log("RoomPage mounting with roomId:", roomId);
     const loadRoom = async () => {
       if (!roomId) {
         setError('Room ID is missing');
@@ -78,7 +80,10 @@ const RoomPage = () => {
       }
       
       try {
+        console.log("Fetching room data for roomId:", roomId);
         const roomData = await db.getRoomById(roomId);
+        console.log("Room data received:", roomData);
+        
         if (!roomData) {
           setError('Room not found');
           setLoading(false);
@@ -100,6 +105,7 @@ const RoomPage = () => {
             role: user.id === roomData.createdBy ? 'host' : 'viewer'
           };
           
+          console.log("Adding user to room:", userToAdd);
           await db.addUserToRoom(roomId, userToAdd);
           roomData.users.push(userToAdd);
         }
@@ -234,7 +240,21 @@ const RoomPage = () => {
   }
   
   if (!room) {
-    return null;
+    return (
+      <div className="min-h-screen flex flex-col dark:bg-gray-900">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <div className="text-xl text-red-500 dark:text-red-400">Room data could not be loaded</div>
+          <Button 
+            onClick={() => navigate('/rooms')}
+            variant="outline"
+            className="dark:border-purple-500 dark:text-purple-400"
+          >
+            Back to Rooms
+          </Button>
+        </div>
+      </div>
+    );
   }
   
   return (
@@ -322,9 +342,10 @@ const RoomPage = () => {
                       <input
                         type="range"
                         min="0"
-                        max="100"
+                        max="1"
+                        step="0.01"
                         value={volume}
-                        onChange={(e) => handleVolumeChange(parseInt(e.target.value))}
+                        onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
                         className="w-24"
                       />
                     </div>

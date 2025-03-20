@@ -33,7 +33,9 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(externalIsPlaying || false);
   const [currentTime, setCurrentTime] = useState(externalCurrentTime || 0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(typeof externalVolume === 'number' ? externalVolume : 1);
+  // Make sure volume is between 0 and 1
+  const [volume, setVolume] = useState(typeof externalVolume === 'number' ? 
+    (externalVolume > 1 ? externalVolume / 100 : externalVolume) : 1);
   const [isMuted, setIsMuted] = useState(externalVolume === 0);
   const [messages, setMessages] = useState<{user: string, text: string, time: Date}[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -68,9 +70,11 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
   
   useEffect(() => {
     if (typeof externalVolume === 'number' && videoRef.current) {
-      setVolume(externalVolume);
-      videoRef.current.volume = externalVolume;
-      setIsMuted(externalVolume === 0);
+      // Convert to range 0-1 if greater than 1
+      const normalizedVolume = externalVolume > 1 ? externalVolume / 100 : externalVolume;
+      setVolume(normalizedVolume);
+      videoRef.current.volume = normalizedVolume;
+      setIsMuted(normalizedVolume === 0);
     }
   }, [externalVolume]);
   
@@ -258,13 +262,19 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({
   
   return (
     <div className="relative w-full rounded-lg overflow-hidden shadow-lg bg-black dark:bg-gray-900 transition-all">
-      <video
-        ref={videoRef}
-        className="w-full h-auto"
-        src={finalVideoSrc}
-        onClick={togglePlay}
-        playsInline
-      />
+      {finalVideoSrc ? (
+        <video
+          ref={videoRef}
+          className="w-full h-auto"
+          src={finalVideoSrc}
+          onClick={togglePlay}
+          playsInline
+        />
+      ) : (
+        <div className="aspect-video bg-black flex items-center justify-center text-white">
+          No video source available
+        </div>
+      )}
       
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {!isPlaying && (

@@ -7,22 +7,72 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/context/AuthContext';
 
 interface MediaPlayerProps {
-  roomId: string;
-  videoSrc: string;
+  roomId?: string;
+  videoSrc?: string;
+  videoId?: string;
   syncUsers?: boolean;
+  isPlaying?: boolean;
+  volume?: number;
+  currentTime?: number;
+  onTimeUpdate?: (time: number) => void;
+  onDurationChange?: (newDuration: number) => void;
 }
 
-const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers = true }) => {
+const MediaPlayer: React.FC<MediaPlayerProps> = ({ 
+  roomId = '', 
+  videoSrc = '', 
+  videoId = '',
+  syncUsers = true,
+  isPlaying: externalIsPlaying,
+  volume: externalVolume,
+  currentTime: externalCurrentTime,
+  onTimeUpdate,
+  onDurationChange
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(externalIsPlaying || false);
+  const [currentTime, setCurrentTime] = useState(externalCurrentTime || 0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(typeof externalVolume === 'number' ? externalVolume : 1);
+  const [isMuted, setIsMuted] = useState(externalVolume === 0);
   const [messages, setMessages] = useState<{user: string, text: string, time: Date}[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [showChat, setShowChat] = useState(false);
   const { user } = useAuth();
+  
+  // Determine video source from either videoSrc or videoId
+  const finalVideoSrc = videoSrc || (videoId ? `/videos/${videoId}.mp4` : '');
+  
+  // Update from external props when they change
+  useEffect(() => {
+    if (typeof externalIsPlaying === 'boolean' && externalIsPlaying !== isPlaying) {
+      setIsPlaying(externalIsPlaying);
+      if (videoRef.current) {
+        if (externalIsPlaying) {
+          videoRef.current.play().catch(e => console.error("Couldn't play:", e));
+        } else {
+          videoRef.current.pause();
+        }
+      }
+    }
+  }, [externalIsPlaying]);
+  
+  useEffect(() => {
+    if (typeof externalCurrentTime === 'number' && 
+        Math.abs(externalCurrentTime - currentTime) > 1 && 
+        videoRef.current) {
+      videoRef.current.currentTime = externalCurrentTime;
+      setCurrentTime(externalCurrentTime);
+    }
+  }, [externalCurrentTime]);
+  
+  useEffect(() => {
+    if (typeof externalVolume === 'number' && videoRef.current) {
+      setVolume(externalVolume);
+      videoRef.current.volume = externalVolume;
+      setIsMuted(externalVolume === 0);
+    }
+  }, [externalVolume]);
   
   // Update duration when video is loaded
   useEffect(() => {
@@ -31,13 +81,16 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
     
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
+      if (onDurationChange) {
+        onDurationChange(video.duration);
+      }
     };
     
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [videoRef]);
+  }, [videoRef, onDurationChange]);
   
   // Update current time as video plays
   useEffect(() => {
@@ -47,8 +100,12 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);
       
+      if (onTimeUpdate) {
+        onTimeUpdate(video.currentTime);
+      }
+      
       // If in sync mode, broadcast current time to room (simulated)
-      if (syncUsers) {
+      if (syncUsers && roomId) {
         localStorage.setItem(`room-${roomId}-time`, video.currentTime.toString());
         localStorage.setItem(`room-${roomId}-playing`, isPlaying.toString());
       }
@@ -58,11 +115,11 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [videoRef, isPlaying, syncUsers, roomId]);
+  }, [videoRef, isPlaying, syncUsers, roomId, onTimeUpdate]);
   
   // Listen for sync updates from other users
   useEffect(() => {
-    if (!syncUsers) return;
+    if (!syncUsers || !roomId) return;
     
     const syncInterval = setInterval(() => {
       const storedTime = localStorage.getItem(`room-${roomId}-time`);
@@ -100,7 +157,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
       }
       setIsPlaying(!isPlaying);
       
-      if (syncUsers) {
+      if (syncUsers && roomId) {
         localStorage.setItem(`room-${roomId}-playing`, (!isPlaying).toString());
       }
     }
@@ -134,7 +191,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
       videoRef.current.currentTime = value[0];
       setCurrentTime(value[0]);
       
-      if (syncUsers) {
+      if (syncUsers && roomId) {
         localStorage.setItem(`room-${roomId}-time`, value[0].toString());
       }
     }
@@ -158,7 +215,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
   
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !user) return;
+    if (!newMessage.trim() || !user || !roomId) return;
     
     const message = {
       user: user.name || user.email,
@@ -178,6 +235,8 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
   
   useEffect(() => {
     // Load chat messages from localStorage (simulating server)
+    if (!roomId) return;
+    
     const storedMessages = localStorage.getItem(`room-${roomId}-messages`);
     if (storedMessages) {
       setMessages(JSON.parse(storedMessages));
@@ -195,14 +254,14 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
     }, 1000);
     
     return () => clearInterval(messageInterval);
-  }, [roomId]);
+  }, [roomId, messages.length]);
   
   return (
     <div className="relative w-full rounded-lg overflow-hidden shadow-lg bg-black dark:bg-gray-900 transition-all">
       <video
         ref={videoRef}
         className="w-full h-auto"
-        src={videoSrc}
+        src={finalVideoSrc}
         onClick={togglePlay}
         playsInline
       />
@@ -267,7 +326,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
           </div>
           
           <div className="flex items-center space-x-2">
-            {syncUsers && (
+            {syncUsers && roomId && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -295,7 +354,7 @@ const MediaPlayer: React.FC<MediaPlayerProps> = ({ roomId, videoSrc, syncUsers =
         </div>
       </div>
       
-      {showChat && (
+      {showChat && roomId && (
         <div className="absolute right-0 top-0 bottom-16 w-64 bg-black/80 backdrop-blur-sm p-4 overflow-y-auto transition-all border-l border-white/20">
           <h3 className="text-white font-medium mb-4">Room Chat</h3>
           
